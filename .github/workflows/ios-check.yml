@@ -35,6 +35,8 @@ jobs:
           cache: true
       - name: Generate iOS platform with Flutter
         run: flutter create --platforms=ios --project-name ios_app_studio --org com.rickbesada .
+      - name: Set iOS bundle identifier
+        run: python3 scripts/configure_ios.py
       - name: Get dependencies
         run: flutter pub get
       - name: Compile iOS application without code signing
