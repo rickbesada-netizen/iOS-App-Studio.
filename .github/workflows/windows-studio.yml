@@ -1,0 +1,31 @@
+name: Windows Studio installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/windows-studio.yml'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m py_compile desktop/studio.py
+      - run: pip install pyinstaller
+      - run: pyinstaller --noconfirm --clean --onefile --windowed --name iOS-App-Studio desktop/studio.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iOS-App-Studio-Windows
+          path: dist/iOS-App-Studio.exe
+      - uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: windows-studio-${{ github.run_number }}
+          name: Windows Studio build ${{ github.run_number }}
+          files: dist/iOS-App-Studio.exe
