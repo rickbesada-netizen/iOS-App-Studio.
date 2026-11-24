@@ -1,0 +1,53 @@
+# Connect your GitHub repository in Codemagic first.
+# The unsigned build can run without an Apple Developer account.
+workflows:
+  ios-unsigned:
+    name: iOS build (unsigned / no Apple account)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+    scripts:
+      - name: Generate iOS project
+        script: flutter create --platforms=ios --project-name ios_app_studio --org com.rickbesada .
+      - name: Fetch packages
+        script: flutter pub get
+      - name: Test
+        script: |
+          flutter analyze
+          flutter test
+      - name: Compile iOS without signing
+        script: flutter build ios --release --no-codesign
+    artifacts:
+      - build/ios/iphoneos/Runner.app/**
+
+  ios-testflight:
+    name: Signed iOS release to TestFlight
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    # Set up an App Store Connect integration in Codemagic named exactly this.
+    integrations:
+      app_store_connect: apple-app-store
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.rickbesada.iosappstudio
+      flutter: stable
+      xcode: latest
+    scripts:
+      - name: Generate iOS project
+        script: flutter create --platforms=ios --project-name ios_app_studio --org com.rickbesada .
+      - name: Fetch packages
+        script: flutter pub get
+      - name: Configure iOS signing
+        script: xcode-project use-profiles
+      - name: Build signed IPA
+        script: flutter build ipa --release --build-number=$PROJECT_BUILD_NUMBER --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

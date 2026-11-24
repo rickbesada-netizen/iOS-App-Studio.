@@ -1,0 +1,48 @@
+name: Build and check iOS (unsigned)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Dart analysis and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  ios:
+    name: iOS cloud build (no Apple signing)
+    needs: check
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate iOS platform with Flutter
+        run: flutter create --platforms=ios --project-name ios_app_studio --org com.rickbesada .
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Compile iOS application without code signing
+        run: flutter build ios --release --no-codesign
+      - name: Upload unsigned build for verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-runner
+          path: build/ios/iphoneos/Runner.app
+          if-no-files-found: error
+          retention-days: 7
