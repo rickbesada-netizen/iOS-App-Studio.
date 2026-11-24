@@ -11,6 +11,8 @@ workflows:
     scripts:
       - name: Generate iOS project
         script: flutter create --platforms=ios --project-name ios_app_studio --org com.rickbesada .
+      - name: Set iOS bundle identifier
+        script: python3 scripts/configure_ios.py
       - name: Fetch packages
         script: flutter pub get
       - name: Test
@@ -38,6 +40,8 @@ workflows:
     scripts:
       - name: Generate iOS project
         script: flutter create --platforms=ios --project-name ios_app_studio --org com.rickbesada .
+      - name: Set iOS bundle identifier
+        script: python3 scripts/configure_ios.py
       - name: Fetch packages
         script: flutter pub get
       - name: Configure iOS signing
