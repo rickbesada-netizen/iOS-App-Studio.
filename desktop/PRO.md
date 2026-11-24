@@ -1,0 +1,2 @@
+# Pro features
+Visual canvas: add components, drag, edit dimensions and text, generate Flutter code. Buttons are placeholders until you implement actions. Canvas is a single-screen layout generator, not an iOS simulator. AI builder: install Ollama separately, pull qwen2.5-coder:7b or another compatible model, start Ollama, enter model name and prompt. Review generated code before applying. No paid API required for local inference. Cloud compilation and Apple signing remain separate.

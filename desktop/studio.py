@@ -262,4 +262,112 @@ class Studio(tk.Tk):
     def open_url(self,suffix):
         if self.current and self.persist() and re.fullmatch(r"[\w.-]+/[\w.-]+",self.current["repo"]):webbrowser.open("https://github.com/"+self.current["repo"]+"/"+suffix)
 
-if __name__=="__main__":Studio().mainloop()
+
+class ProStudio(Studio):
+    def __init__(self):
+        super().__init__()
+        self.title("iOS App Studio Pro")
+        self.visual=ttk.Frame(self.tabs); self.tabs.add(self.visual,text="Visual canvas")
+        self.ai=ttk.Frame(self.tabs); self.tabs.add(self.ai,text="AI builder")
+        self.nodes=[]; self.selected_node=None; self.drag=None
+        toolbar=ttk.Frame(self.visual); toolbar.pack(fill="x",pady=8)
+        for kind in ["Text","Button","Input","Card","Image placeholder"]:
+            ttk.Button(toolbar,text="+ "+kind,command=lambda k=kind:self.add_node(k)).pack(side="left",padx=3)
+        ttk.Button(toolbar,text="Delete",command=self.delete_node).pack(side="left",padx=3)
+        body=ttk.Frame(self.visual); body.pack(fill="both",expand=True)
+        self.canvas=tk.Canvas(body,width=320,height=520,bg="#f5f5ff",highlightthickness=0);self.canvas.pack(side="left",padx=16,pady=8)
+        self.canvas.bind("<ButtonPress-1>",self.pick);self.canvas.bind("<B1-Motion>",self.move);self.canvas.bind("<ButtonRelease-1>",self.release)
+        panel=ttk.Frame(body);panel.pack(side="left",fill="both",expand=True,padx=8)
+        self.props={}
+        for key,label in [("text","Text / placeholder"),("x","X position"),("y","Y position"),("w","Width"),("h","Height")]:
+            ttk.Label(panel,text=label).pack(anchor="w",pady=(8,2)); e=ttk.Entry(panel);e.pack(fill="x");self.props[key]=e
+        ttk.Button(panel,text="Apply properties",command=self.apply_props).pack(fill="x",pady=10)
+        ttk.Button(panel,text="Generate Flutter layout",command=self.canvas_code).pack(fill="x",pady=4)
+        ttk.Label(panel,text="Drag components on the canvas.\\nLayout uses proportional positioning.",wraplength=240).pack(anchor="w",pady=8)
+        self.model=ttk.Entry(self.ai); self.model.insert(0,"qwen2.5-coder:7b")
+        ttk.Label(self.ai,text="Local Ollama model (must be installed and running)").pack(anchor="w",padx=15,pady=(12,4));self.model.pack(fill="x",padx=15)
+        ttk.Label(self.ai,text="Describe the app or changes you want").pack(anchor="w",padx=15,pady=8)
+        self.prompt=tk.Text(self.ai,height=8,bg=BG,fg=FG,insertbackground=FG);self.prompt.pack(fill="x",padx=15)
+        ttk.Button(self.ai,text="Generate Dart with local AI",command=self.ai_generate).pack(anchor="w",padx=15,pady=10)
+        self.ai_result=tk.Text(self.ai,bg=BG,fg=FG,insertbackground=FG,font=("Consolas",10));self.ai_result.pack(fill="both",expand=True,padx=15,pady=5)
+        ttk.Button(self.ai,text="Apply generated code to project",command=self.apply_ai).pack(anchor="w",padx=15,pady=8)
+        self.ai_events=queue.Queue();self.after(150,self.poll_ai)
+    def select(self,event=None):
+        super().select(event)
+        if self.current and hasattr(self,"canvas"):
+            self.nodes=self.current.setdefault("nodes",[]);self.selected_node=None;self.redraw()
+    def add_node(self,kind):
+        if not self.current:return
+        self.nodes.append({"kind":kind,"text":kind,"x":20,"y":min(450,20+len(self.nodes)*55),"w":220,"h":48})
+        self.selected_node=len(self.nodes)-1;self.sync()
+    def sync(self):
+        if self.current:self.current["nodes"]=self.nodes;save(self.projects)
+        self.redraw()
+        if self.selected_node is not None:
+            for k,e in self.props.items():e.delete(0,"end");e.insert(0,str(self.nodes[self.selected_node][k]))
+    def redraw(self):
+        self.canvas.delete("all")
+        for i,n in enumerate(self.nodes):
+            x,y,w,h=[n[k] for k in ("x","y","w","h")]
+            fill={"Button":"#7565e9","Input":"#ffffff","Card":"#dedcf5","Image placeholder":"#ccd2e5","Text":"#f5f5ff"}[n["kind"]]
+            tag="node"+str(i)
+            self.canvas.create_rectangle(x,y,x+w,y+h,fill=fill,outline="#7565e9" if i==self.selected_node else "#b7bbce",width=2 if i==self.selected_node else 1,tags=(tag,))
+            self.canvas.create_text(x+w/2,y+h/2,text=n["text"],width=max(10,w-8),fill="white" if n["kind"]=="Button" else "#202033",tags=(tag,))
+    def pick(self,e):
+        hits=self.canvas.find_overlapping(e.x,e.y,e.x,e.y)
+        if not hits:return
+        tags=self.canvas.gettags(hits[-1])
+        for tag in tags:
+            if tag.startswith("node"):
+                self.selected_node=int(tag[4:]);n=self.nodes[self.selected_node];self.drag=(e.x-n["x"],e.y-n["y"]);self.sync();break
+    def move(self,e):
+        if self.drag is None or self.selected_node is None:return
+        n=self.nodes[self.selected_node];n["x"]=max(0,min(320-n["w"],e.x-self.drag[0]));n["y"]=max(0,min(520-n["h"],e.y-self.drag[1]));self.redraw()
+    def release(self,e):
+        if self.drag is not None:self.drag=None;self.sync()
+    def delete_node(self):
+        if self.selected_node is not None:del self.nodes[self.selected_node];self.selected_node=None;self.sync()
+    def apply_props(self):
+        if self.selected_node is None:return
+        try:
+            n=self.nodes[self.selected_node];w=max(20,min(320,int(self.props["w"].get())));h=max(20,min(520,int(self.props["h"].get())))
+            n.update(text=self.props["text"].get(),w=w,h=h,x=max(0,min(320-w,int(self.props["x"].get()))),y=max(0,min(520-h,int(self.props["y"].get()))));self.sync()
+        except ValueError:messagebox.showerror("Properties","Enter whole numbers for dimensions and position.")
+    def canvas_code(self):
+        if not self.current or not self.nodes:return
+        if not messagebox.askyesno("Generate layout","Replace the current Dart source with this canvas?"):return
+        widgets=[]
+        for n in self.nodes:
+            t=dart_string(n["text"]);k=n["kind"]
+            child={"Text":f"Center(child:Text({t}))","Button":f"ElevatedButton(onPressed:(){{}},child:Text({t}))","Input":f"TextField(decoration:InputDecoration(labelText:{t},border:const OutlineInputBorder()))","Card":f"Card(child:Center(child:Text({t})))","Image placeholder":"const ColoredBox(color:Colors.black12,child:Icon(Icons.image))"}[k]
+            widgets.append(f"Positioned(left:c.maxWidth*{n['x']/320:.6f},top:c.maxHeight*{n['y']/520:.6f},width:c.maxWidth*{n['w']/320:.6f},height:c.maxHeight*{n['h']/520:.6f},child:{child})")
+        code="import 'package:flutter/material.dart';\nvoid main()=>runApp(MaterialApp(home:Scaffold(appBar:AppBar(title:Text("+dart_string(self.current["name"])+")),body:SafeArea(child:LayoutBuilder(builder:(context,c)=>Stack(children:[\n"+",\n".join(widgets)+"\n]))))));\n"
+        self.code.delete("1.0","end");self.code.insert("1.0",code);self.persist();self.tabs.select(self.editor)
+    def ai_generate(self):
+        if not self.current:return
+        prompt=self.prompt.get("1.0","end-1c").strip();model=self.model.get().strip()
+        if not prompt or not model:return
+        old=self.code.get("1.0","end-1c")
+        self.status.set("Local AI generating...");self.ai_result.delete("1.0","end")
+        def work():
+            try:
+                data={"model":model,"stream":False,"messages":[{"role":"system","content":"Return only a complete Flutter lib/main.dart file. Use Flutter SDK only, no external packages. Do not include markdown. Preserve relevant existing features."},{"role":"user","content":prompt+"\nExisting source:\n"+old}]}
+                req=urllib.request.Request("http://127.0.0.1:11434/api/chat",data=json.dumps(data).encode(),headers={"Content-Type":"application/json"})
+                with urllib.request.urlopen(req,timeout=600) as r:result=json.load(r)["message"]["content"].strip()
+                result=re.sub(r"^"+chr(96)*3+r"(?:dart)?\s*|\s*"+chr(96)*3+r"$","",result)
+                self.ai_events.put((True,result))
+            except Exception as e:self.ai_events.put((False,str(e)))
+        threading.Thread(target=work,daemon=True).start()
+    def poll_ai(self):
+        try:
+            while True:
+                ok,result=self.ai_events.get_nowait();self.ai_result.delete("1.0","end");self.ai_result.insert("1.0",result);self.status.set("AI response ready — review before applying" if ok else "AI connection failed — check Ollama and model")
+        except queue.Empty:pass
+        self.after(150,self.poll_ai)
+    def apply_ai(self):
+        result=self.ai_result.get("1.0","end-1c")
+        if self.current and "void main" in result and messagebox.askyesno("Apply AI code","Replace current Dart source? Review and build-test the generated code."):
+            self.code.delete("1.0","end");self.code.insert("1.0",result);self.persist();self.tabs.select(self.editor)
+
+if __name__=="__main__":ProStudio().mainloop()
+
